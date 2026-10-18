@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>PTPバーコード読取テスト</title>
+<style>
+:root{--bg:#eef2f1;--panel:#fff;--ink:#18302c;--sub:#5c716d;--line:#cfdad7;--accent:#0b7a68;--ok:#1f7a3a;--bad:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1a18;--panel:#172523;--ink:#e3eeeb;--sub:#93a8a3;--line:#2b3d3a;--accent:#3cc2a6;--ok:#6fcf8a;--bad:#f08a80;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Hiragino Sans",system-ui,sans-serif;font-size:16px}
+.wrap{max-width:560px;margin:0 auto;padding:max(12px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 30px max(14px,env(safe-area-inset-left));display:grid;gap:12px}
+h1{font-size:18px;margin:0}
+.cam{position:relative;border-radius:14px;overflow:hidden;background:#000;aspect-ratio:4/3}
+video{width:100%;height:100%;object-fit:cover;display:block}
+.band{position:absolute;left:8%;right:8%;top:32%;height:36%;border:2px solid rgba(255,255,255,.9);border-radius:8px;box-shadow:0 0 0 999px rgba(0,0,0,.35)}
+button{font:inherit;border-radius:12px;padding:13px;border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+button.p{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+#result{font-size:20px;font-weight:700;word-break:break-all}
+#result.ok{color:var(--ok)}
+.sub{font-size:13px;color:var(--sub)}
+ul{margin:0;padding-left:18px;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+#status.bad{color:var(--bad)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PTPバーコード読取テスト</h1>
+  <div class="sub" id="status">読取エンジンを準備中…</div>
+
+  <div class="cam"><video id="video" playsinline muted></video><div class="band"></div></div>
+
+  <div class="row">
+    <button class="p" id="start">カメラ開始</button>
+    <button id="photoBtn">写真で読む</button>
+  </div>
+  <input id="photo" type="file" accept="image/*" capture="environment" hidden>
+  <div class="row" id="zoomRow" hidden>
+    <button data-z="1">ズーム1倍</button><button data-z="2">2倍</button><button data-z="3">3倍</button>
+  </div>
+
+  <div class="box">
+    <div class="sub">最後に読めたコード</div>
+    <div id="result">まだありません</div>
+    <div class="sub" id="detail"></div>
+  </div>
+
+  <div class="box">
+    <div class="sub">読めた履歴</div>
+    <ul id="log"></ul>
+  </div>
+</div>
+
+<script type="module">
+const CANDIDATES = ["2.1.0", "2.0.1"]; // zxing-wasm のバージョン（上から試す）
+const $ = id => document.getElementById(id);
+const status = (t, bad) => { $("status").textContent = t; $("status").className = "sub" + (bad ? " bad" : ""); };
+let read = null, engine = "";
+
+function addScript(src){
+  return new Promise((ok, ng) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => ng(new Error("読込失敗 " + src)); document.head.appendChild(s); });
+}
+async function load(){
+  const errs = [];
+  for (const v of CANDIDATES){
+    try{
+      await addScript(`https://cdn.jsdelivr.net/npm/zxing-wasm@${v}/dist/iife/reader/index.js`);
+      const m = window.ZXingWASM;
+      read = m && (m.readBarcodes || m.readBarcodesFromImageData);
+      if (read){ engine = "zxing-wasm@" + v; status("準備完了：" + engine + "　「カメラ開始」を押してください"); return; }
+    }catch(e){ errs.push(e.message); }
+  }
+  status("読取エンジンを読み込めません：" + errs.join(" / "), true);
+}
+const ready = load();
+
+const canvas = document.createElement("canvas");
+const ctx = canvas.getContext("2d", { willReadFrequently: true });
+const OPTS = { tryHarder: true, maxNumberOfSymbols: 1 };
+
+async function decode(img){
+  // 起動直後の初回だけWebAssemblyの読み込みが走る
+  const res = await read(img, OPTS);
+  return (res || []).find(r => r.text && r.isValid !== false) || null;
+}
+
+let last = "", lastAt = 0;
+function show(r, via){
+  const now = Date.now();
+  if (r.text === last && now - lastAt < 2000) return;
+  last = r.text; lastAt = now;
+  $("result").textContent = r.text; $("result").className = "ok";
+  const digits = r.text.replace(/\D/g, "");
+  let gtin = digits.length >= 16 && digits.startsWith("01") ? digits.slice(2, 16) : digits;
+  if (gtin.length === 13) gtin = "0" + gtin;
+  const jan = gtin.length === 14 && gtin[0] === "0" ? gtin.slice(1) : "";
+  $("detail").textContent = `種類：${r.format}　GTIN：${gtin}` + (jan ? `　JAN：${jan}` : "") + `（${via}）`;
+  const li = document.createElement("li");
+  li.textContent = `${new Date().toLocaleTimeString("ja-JP")}  ${r.format}  ${r.text}`;
+  $("log").prepend(li);
+  if (navigator.vibrate) navigator.vibrate(80);
+}
+
+$("start").onclick = async () => {
+  await ready; if (!read) return;
+  try{
+    const video = $("video");
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+    video.srcObject = stream; await video.play();
+    const track = stream.getVideoTracks()[0];
+    try{ await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); }catch{}
+    // ズーム対応端末なら2倍から始める（少し離してピントを合わせ、バーコードを大きく写すため）
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    if (caps.zoom){
+      const setZoom = async z => { z = Math.min(caps.zoom.max, Math.max(caps.zoom.min, z)); try{ await track.applyConstraints({ advanced: [{ zoom: z }] }); }catch{} 
+        document.querySelectorAll("#zoomRow button").forEach(b => b.className = Number(b.dataset.z) === z ? "p" : ""); };
+      $("zoomRow").hidden = false;
+      document.querySelectorAll("#zoomRow button").forEach(b => b.onclick = () => setZoom(Number(b.dataset.z)));
+      setZoom(2);
+    }
+    $("start").textContent = "読取中…"; $("start").disabled = true;
+    status("読取中（" + engine + "）バーコードを白枠に入れて5〜10cmまで近づけてください");
+    let busy = false;
+    const tick = async () => {
+      if (!busy && video.readyState >= 2){
+        busy = true;
+        try{
+          const vw = video.videoWidth, vh = video.videoHeight;
+          const sw = Math.round(vw * .84), sh = Math.round(vh * .36);
+          canvas.width = sw; canvas.height = sh;
+          ctx.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, sw, sh);
+          const r = await decode(ctx.getImageData(0, 0, sw, sh));
+          if (r) show(r, "カメラ");
+        }catch(e){ status("読取エラー：" + e.message, true); }
+        busy = false;
+      }
+      setTimeout(tick, 100);
+    };
+    tick();
+  }catch(e){ status("カメラを起動できません：" + e.message, true); }
+};
+
+$("photoBtn").onclick = () => $("photo").click();
+$("photo").onchange = async ev => {
+  const f = ev.target.files[0]; ev.target.value = "";
+  if (!f) return;
+  await ready; if (!read) return;
+  status("写真を解析中…");
+  try{
+    const bmp = await createImageBitmap(f);
+    const s = Math.min(1, 2400 / Math.max(bmp.width, bmp.height));
+    canvas.width = Math.round(bmp.width * s); canvas.height = Math.round(bmp.height * s);
+    ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const r = await decode(ctx.getImageData(0, 0, canvas.width, canvas.height));
+    if (r){ show(r, "写真"); status("写真から読めました（" + engine + "）"); }
+    else status("写真からは見つかりませんでした。バーコードを大きく写して撮り直してください", true);
+  }catch(e){ status("写真の解析エラー：" + e.message, true); }
+};
+</script>
+</body>
+</html>
