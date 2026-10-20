@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>医薬品棚卸スキャン</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=BIZ+UDGothic:wght@400;700&display=swap">
+<style>
+/* 作業台レイアウト：上にカメラ、下に入力カード。片手・親指で押せる大きさ */
+:root{
+  --bg:#eef2f1; --panel:#ffffff; --ink:#18302c; --sub:#5c716d; --line:#cfdad7;
+  --accent:#0b7a68; --accent-ink:#ffffff; --warn:#b4541a; --bad:#b3261e; --ok:#1f7a3a;
+  --sans:"BIZ UDPGothic","Hiragino Sans","Hiragino Kaku Gothic ProN",system-ui,sans-serif;
+  --mono:"BIZ UDGothic",ui-monospace,"SF Mono",Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1a18; --panel:#172523; --ink:#e3eeeb; --sub:#93a8a3; --line:#2b3d3a;
+  --accent:#3cc2a6; --accent-ink:#06201b; --warn:#e8935a; --bad:#f08a80; --ok:#6fcf8a; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;-webkit-text-size-adjust:100%}
+.wrap{max-width:560px;margin:0 auto;padding-block:max(10px,env(safe-area-inset-top)) max(24px,env(safe-area-inset-bottom));
+  padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right));display:grid;gap:12px}
+header{display:flex;align-items:center;gap:8px}
+header h1{font-size:17px;margin:0;flex:1}
+.pill{font-size:12px;padding:4px 9px;border-radius:999px;border:1px solid var(--line);color:var(--sub);white-space:nowrap}
+.pill.ok{color:var(--ok);border-color:currentColor}.pill.warn{color:var(--warn);border-color:currentColor}.pill.bad{color:var(--bad);border-color:currentColor}
+.row{display:flex;gap:8px}.row>*{flex:1;min-width:0}
+label.f{display:grid;gap:3px;font-size:12px;color:var(--sub)}
+input,select{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;width:100%}
+input:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button{font:inherit;border:0;border-radius:12px;padding:12px 14px;cursor:pointer;background:var(--panel);color:var(--ink);border:1px solid var(--line)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+button:disabled{opacity:.45}
+.cam{position:relative;border-radius:14px;overflow:hidden;background:#000;aspect-ratio:4/3;max-width:100%}
+.cam video{width:100%;height:100%;object-fit:cover;display:block}
+.cam .band{position:absolute;left:8%;right:8%;top:32%;height:36%;border:2px solid rgba(255,255,255,.85);border-radius:8px;box-shadow:0 0 0 999px rgba(0,0,0,.35)}
+.cam .msg{position:absolute;left:0;right:0;bottom:8px;text-align:center;color:#fff;font-size:13px;text-shadow:0 1px 3px #000}
+.cam .start{position:absolute;inset:0;display:grid;place-items:center;background:#000;color:#fff}
+.cam .start button{background:var(--accent);color:var(--accent-ink);border:0;font-weight:700;padding:14px 22px}
+.tools{display:flex;gap:8px;flex-wrap:wrap}.tools>*{flex:1}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;display:grid;gap:10px}
+.name{font-size:19px;font-weight:700;line-height:1.35}
+.codes{font-family:var(--mono);font-size:12px;color:var(--sub);display:flex;flex-wrap:wrap;gap:4px 12px}
+.qty{display:grid;grid-template-columns:56px 1fr 56px 64px;gap:8px;align-items:stretch}
+.qty input{text-align:center;font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;padding:6px}
+.qty button{font-size:22px;padding:0}
+.unit{display:grid;place-items:center;color:var(--sub);font-size:14px}
+.notice{font-size:13px;color:var(--warn);white-space:pre-line}
+.results{display:grid;gap:4px;max-height:260px;overflow:auto}
+.results button{text-align:left;padding:10px;font-size:14px}
+.results small{display:block;color:var(--sub);font-family:var(--mono);font-size:11px}
+h2{font-size:13px;color:var(--sub);margin:4px 0 0;font-weight:700;letter-spacing:.04em}
+ul.log{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+ul.log li{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:flex;gap:8px;align-items:center}
+ul.log .t{flex:1;min-width:0}
+ul.log .t b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ul.log .t span{font-size:11px;color:var(--sub)}
+ul.log .q{font-variant-numeric:tabular-nums;font-weight:700}
+ul.log button{padding:6px 10px;font-size:12px}
+details{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+details summary{cursor:pointer;color:var(--sub);font-size:14px}
+details .in{display:grid;gap:10px;margin-top:10px}
+.mono{font-family:var(--mono);font-size:11px;color:var(--sub);word-break:break-all}
+.slipHead{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline}
+.slipHead b{font-size:17px}
+.srow{display:grid;grid-template-columns:28px 1fr 76px;gap:8px;align-items:start;border-top:1px solid var(--line);padding-top:10px}
+.srow.warn .sname select{border-color:var(--warn)}
+.srow.off{opacity:.45}
+.srow input[type=checkbox]{width:22px;height:22px;margin-top:22px}
+.sname{display:grid;gap:4px;min-width:0}
+.sname small{font-size:11px;color:var(--sub);overflow-wrap:anywhere}
+.sname select{font:inherit;font-size:14px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;width:100%}
+.sname .sq{font-size:13px;padding:7px}
+.srow .sqty{text-align:center;font-size:20px;font-weight:700;padding:8px 4px;margin-top:18px}
+.flag{font-size:11px;color:var(--warn)}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.tile{background:var(--bg);border-radius:10px;padding:8px 10px}
+.tile span{display:block;font-size:11px;color:var(--sub)}
+.tile b{font-size:18px;font-variant-numeric:tabular-nums}
+.tile.bad b{color:var(--bad)}.tile.warn b{color:var(--warn)}.tile.ok b{color:var(--ok)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tabs button{padding:8px 12px;font-size:13px}
+.tabs button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+ul.diff{list-style:none;margin:0;padding:0;display:grid;gap:6px;max-height:60vh;overflow:auto}
+ul.diff li{border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:grid;grid-template-columns:1fr auto;gap:2px 10px;cursor:pointer}
+ul.diff li b{font-size:14px;min-width:0;overflow-wrap:anywhere}
+ul.diff li small{font-size:11px;color:var(--sub)}
+ul.diff .v{text-align:right;font-variant-numeric:tabular-nums;font-size:13px}
+ul.diff .v.neg{color:var(--bad)}ul.diff .v.pos{color:var(--ok)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>医薬品棚卸スキャン</h1>
+    <span id="stMaster" class="pill">マスタ未読込</span>
+    <span id="stQueue" class="pill">送信待ち 0</span>
+  </header>
+
+  <div class="row">
+    <label class="f">担当者<input id="staff" placeholder="例：山田" autocomplete="off"></label>
+    <label class="f">置き場（任意）<input id="place" placeholder="例：A棚" autocomplete="off"></label>
+  </div>
+
+  <div class="cam" id="cam">
+    <video id="video" playsinline muted></video>
+    <div class="band"></div>
+    <div class="msg" id="camMsg">PTPのバーコードを枠に入れて近づけてください</div>
+    <div class="start" id="startBox"><button id="btnStart" type="button">カメラでスキャン開始</button></div>
+  </div>
+
+  <div class="tools">
+    <button id="btnTorch" type="button" disabled>ライト</button>
+    <label class="f" style="display:block"><button id="btnPhoto" type="button" style="width:100%">写真で読む</button>
+      <input id="photo" type="file" accept="image/*" capture="environment" hidden></label>
+    <button id="btnManual" type="button">コード手入力</button>
+  </div>
+  <div class="tools">
+    <button id="btnSlip" type="button">Cコレクト2の印刷物を読む</button>
+    <input id="slipPhoto" type="file" accept="image/*" capture="environment" hidden>
+  </div>
+  <div class="tools" id="zoomRow" style="display:none">
+    <button type="button" data-z="1">ズーム1倍</button><button type="button" data-z="2">2倍</button><button type="button" data-z="3">3倍</button>
+  </div>
+
+  <section class="card" id="card" hidden>
+    <div class="name" id="cName">―</div>
+    <div class="codes" id="cCodes"></div>
+    <div class="notice" id="cNotice" hidden></div>
+    <div id="linkBox" hidden>
+      <input id="search" placeholder="品名で検索してマスタと紐付け（例：ハイチオール）" autocomplete="off">
+      <div class="results" id="results"></div>
+    </div>
+    <div class="qty">
+      <button type="button" id="minus" aria-label="1減らす">−</button>
+      <input id="qty" type="number" inputmode="decimal" value="1" min="0" step="any" aria-label="数量">
+      <button type="button" id="plus" aria-label="1増やす">＋</button>
+      <div class="unit" id="cUnit">―</div>
+    </div>
+    <div class="row">
+      <button type="button" id="btnCancel">やめる</button>
+      <button type="button" class="primary" id="btnSend">送信して次へ</button>
+    </div>
+  </section>
+
+  <section class="card" id="slip" hidden>
+    <div class="slipHead"><b>Cコレクト2 読取結果</b><span class="pill">棚番：予製</span><span class="mono" id="slipId"></span></div>
+    <div class="notice" id="slipNotice" hidden></div>
+    <div id="slipRows"></div>
+    <details id="slipRaw"><summary>読み取った文字をそのまま見る</summary><pre class="mono" id="slipText" style="white-space:pre-wrap"></pre></details>
+    <div class="row">
+      <button type="button" id="slipCancel">やめる</button>
+      <button type="button" class="primary" id="slipSend">まとめて送信</button>
+    </div>
+  </section>
+
+  <section class="card" id="diffBox">
+    <div class="slipHead"><b>差異表</b><span class="mono" id="diffAt">理論在庫と棚卸数の比較</span></div>
+    <button type="button" class="primary" id="btnDiff">差異表を作る（最新にする）</button>
+    <div id="diffBody" hidden>
+      <div class="tiles" id="diffTiles"></div>
+      <div class="tabs" id="diffTabs"></div>
+      <input id="diffSearch" placeholder="品名・置き場で絞り込み" autocomplete="off">
+      <ul class="diff" id="diffList"></ul>
+      <div class="mono">品目をタップすると、その品目の数を入力できます（0も入力できます）。全件はスプレッドシートの「差異表」シートにあります。</div>
+    </div>
+  </section>
+
+  <h2>この端末の送信履歴</h2>
+  <ul class="log" id="log"></ul>
+
+  <details>
+    <summary>設定</summary>
+    <div class="in">
+      <label class="f">GASウェブアプリのURL（/exec で終わるもの）<input id="gasUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></label>
+      <div class="row">
+        <button type="button" id="btnSaveUrl">保存してマスタ読込</button>
+        <button type="button" id="btnReload">マスタ再読込</button>
+      </div>
+      <div class="mono" id="diag">読取エンジン：未読込</div>
+    </div>
+  </details>
+</div>
+
+<script type="module">
+/* ===== 設定 ===== */
+const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbxd-uqhwQm_SKT42fjbldkV5q9MT136QecTEVaxlMI-w287cTl1si22sjh5u4uTbITcgg/exec"; // ここにGASの /exec URL を書いておくと全員の入力が不要になります
+
+// GS1データバー（PTPの (01)〜 コード）を読めるZXing-C++（WebAssembly版）。上から順に読み込みを試す
+const ZX_VERSIONS = ["2.1.0", "2.0.1"]; // zxing-wasm のバージョン（上から試す）
+
+/* ===== 小道具 ===== */
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v==null ? d : JSON.parse(v); }catch{ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} }
+};
+const norm = s => String(s||"").normalize("NFKC").toLowerCase().replace(/\s/g,"");
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+
+let gasUrl = store.get("gasUrl", DEFAULT_GAS_URL);
+let master = store.get("master", []);
+let links = store.get("links", {});
+let queue = store.get("queue", []);
+let history = store.get("history", []);
+let byJan = {}, byBase = {};
+let current = null;      // 表示中のスキャン結果
+let scanning = false, busy = false, lastCode = "", lastAt = 0;
+let ZX = null, readFn = null, stream = null, track = null, torchOn = false;
+
+$("staff").value = store.get("staff", "");
+$("place").value = store.get("place", "");
+$("gasUrl").value = gasUrl;
+$("staff").onchange = () => store.set("staff", $("staff").value.trim());
+$("place").onchange = () => store.set("place", $("place").value.trim());
+
+/* ===== マスタ ===== */
+function indexMaster(){
+  byJan = {}; byBase = {};
+  for (const m of master){
+    if (!m.jan) continue;
+    const j = m.jan.length === 14 ? m.jan.slice(1) : m.jan;
+    byJan[j] = m;
+    byBase[j.slice(0,12)] = byBase[j.slice(0,12)] || m;
+  }
+  const el = $("stMaster");
+  el.textContent = master.length ? `マスタ ${master.length}件` : "マスタ未読込";
+  el.className = "pill " + (master.length ? "ok" : "warn");
+}
+async function loadMaster(){
+  if (!gasUrl){ $("stMaster").textContent = "URL未設定"; $("stMaster").className="pill warn"; return; }
+  $("stMaster").textContent = "読込中…";
+  try{
+    const r = await fetch(gasUrl + "?action=master");
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || "取得失敗");
+    master = j.items; links = j.links || {};
+    store.set("master", master); store.set("links", links);
+  }catch(e){
+    $("diag").textContent = "マスタ取得エラー：" + e.message + "（前回の保存分を使います）";
+  }
+  indexMaster();
+}
+
+/* ===== コード解釈 =====
+   PTP：GS1データバー限定型 → "(01)04987188214923" など GTIN-14
+   箱：JAN(EAN-13) → 13桁。どちらもGTIN-14にそろえて扱う */
+function toGtin(text){
+  let d = String(text).replace(/\D/g, "");
+  if (d.length >= 16 && d.startsWith("01")) d = d.slice(2, 16);
+  if (d.length === 13) d = "0" + d;
+  if (d.length === 8) d = "000000" + d;
+  return d.length === 14 ? d : null;
+}
+function lookup(gtin){
+  if (links[gtin] && byJan[links[gtin]]) return byJan[links[gtin]];
+  if (gtin[0] === "0" && byJan[gtin.slice(1)]) return byJan[gtin.slice(1)];
+  return byBase[gtin.slice(1,13)] || null;   // 箱（先頭1・2）などチェックデジット違いを拾う
+}
+
+/* ===== 読取エンジン ===== */
+function addScript(src){
+  return new Promise((ok, ng) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => ng(new Error("読込失敗")); document.head.appendChild(s); });
+}
+async function loadZX(){
+  if (readFn) return;
+  for (const v of ZX_VERSIONS){
+    try{
+      await addScript(`https://cdn.jsdelivr.net/npm/zxing-wasm@${v}/dist/iife/reader/index.js`);
+      const m = window.ZXingWASM;
+      const f = m && (m.readBarcodes || m.readBarcodesFromImageData);
+      if (f){ ZX = m; readFn = f; $("diag").textContent = "読取エンジン：zxing-wasm@" + v; return; }
+    }catch(e){ /* 次の候補へ */ }
+  }
+  throw new Error("読取エンジンを読み込めませんでした（通信を確認）");
+}
+const READ_OPTS = { tryHarder: true, maxNumberOfSymbols: 1 };
+async function decodeImageData(img){
+  const res = await readFn(img, READ_OPTS);
+  const hit = (res || []).find(r => r.isValid !== false && r.text);
+  return hit ? { text: hit.text, format: hit.format } : null;
+}
+
+/* ===== カメラ ===== */
+const video = $("video");
+const work = document.createElement("canvas");
+const wctx = work.getContext("2d", { willReadFrequently: true });
+
+$("btnStart").onclick = startCamera;
+async function startCamera(){
+  beep(0); // iPhoneで音を鳴らせるようにする
+  $("btnStart").textContent = "準備中…";
+  try{
+    await loadZX();
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+    });
+    video.srcObject = stream; await video.play();
+    track = stream.getVideoTracks()[0];
+    try{ await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); }catch{}
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    $("btnTorch").disabled = !caps.torch;
+    // テストで3倍ズームがよく読めたので、3倍から始める（前回の倍率を記憶）
+    if (caps.zoom){
+      const setZoom = async z => {
+        z = Math.min(caps.zoom.max, Math.max(caps.zoom.min, z));
+        try{ await track.applyConstraints({ advanced: [{ zoom: z }] }); }catch{}
+        store.set("zoom", z);
+        document.querySelectorAll("#zoomRow button").forEach(b => b.className = Number(b.dataset.z) === z ? "primary" : "");
+      };
+      $("zoomRow").style.display = "flex";
+      document.querySelectorAll("#zoomRow button").forEach(b => b.onclick = () => setZoom(Number(b.dataset.z)));
+      setZoom(store.get("zoom", 3));
+    }
+    $("startBox").hidden = true;
+    try{ await navigator.wakeLock?.request("screen"); }catch{}
+    scanning = true; loop();
+  }catch(e){
+    $("btnStart").textContent = "もう一度試す";
+    $("camMsg").textContent = e.message || "カメラを起動できません";
+  }
+}
+$("btnTorch").onclick = async () => {
+  if (!track) return;
+  torchOn = !torchOn;
+  try{ await track.applyConstraints({ advanced: [{ torch: torchOn }] }); }catch{ torchOn = false; }
+};
+
+async function loop(){
+  if (!scanning){ return; }
+  if (!busy && !current && video.readyState >= 2){
+    busy = true;
+    try{
+      const vw = video.videoWidth, vh = video.videoHeight;
+      // 画面の枠と同じ範囲（横84%・縦36%）だけを切り出して読む
+      const sw = Math.round(vw * .84), sh = Math.round(vh * .36);
+      const sx = Math.round((vw - sw) / 2), sy = Math.round((vh - sh) / 2);
+      work.width = sw; work.height = sh;
+      wctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+      const r = await decodeImageData(wctx.getImageData(0, 0, sw, sh));
+      if (r) onCode(r.text, r.format);
+    }catch(e){ $("diag").textContent = "読取エラー：" + e.message; }
+    busy = false;
+  }
+  setTimeout(() => requestAnimationFrame(loop), 90);
+}
+
+/* 写真で読む（ライブで読めないときの予備） */
+$("btnPhoto").onclick = () => $("photo").click();
+$("photo").onchange = async ev => {
+  const file = ev.target.files[0]; ev.target.value = "";
+  if (!file) return;
+  try{
+    await loadZX();
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 2400 / Math.max(bmp.width, bmp.height));
+    work.width = Math.round(bmp.width * scale); work.height = Math.round(bmp.height * scale);
+    wctx.drawImage(bmp, 0, 0, work.width, work.height);
+    const r = await decodeImageData(wctx.getImageData(0, 0, work.width, work.height));
+    if (r) onCode(r.text, r.format);
+    else toast("写真からバーコードが見つかりませんでした。もう少し近づけて撮ってください");
+  }catch(e){ toast(e.message); }
+};
+
+$("btnManual").onclick = () => {
+  const box = $("card");
+  showCard({ gtin: null, item: null, raw: "" }, true);
+  box.scrollIntoView({ behavior: "smooth", block: "center" });
+};
+
+/* ===== 読取後 ===== */
+function onCode(text, format){
+  const gtin = toGtin(text);
+  if (!gtin) return;
+  const now = Date.now();
+  if (gtin === lastCode && now - lastAt < 1500) return; // 同じものを連続で拾わない
+  lastCode = gtin; lastAt = now;
+  beep(1);
+  showCard({ gtin, item: lookup(gtin), raw: text, format });
+}
+
+function showCard(c, manual=false){
+  current = c;
+  $("card").hidden = false;
+  $("qty").value = 1;
+  $("cNotice").hidden = true;
+  $("linkBox").hidden = true;
+  $("search").value = ""; $("results").innerHTML = "";
+  if (manual){
+    $("cName").textContent = "コード手入力";
+    $("cCodes").innerHTML = "";
+    $("cNotice").hidden = false;
+    $("cNotice").textContent = "JAN(13桁)かGS1(14桁)を入力するか、品名で検索して選んでください";
+    $("linkBox").hidden = false;
+    $("search").placeholder = "JANコード または 品名";
+    $("cUnit").textContent = "―";
+    setTimeout(() => $("search").focus(), 50);
+    return;
+  }
+  $("search").placeholder = "品名で検索してマスタと紐付け（例：ハイチオール）";
+  renderItem();
+  if (!c.item){
+    $("cNotice").hidden = false;
+    $("cNotice").textContent = "マスタに見つかりません。下で品名を選ぶと、次回から自動で表示されます（全員に共有）";
+    $("linkBox").hidden = false;
+  }
+  setTimeout(() => $("qty").select(), 50);
+}
+function renderItem(){
+  const c = current, it = c.item;
+  $("cName").textContent = it ? it.name : "（未登録の品目）";
+  const parts = [];
+  if (c.gtin) parts.push(`GS1 ${c.gtin}`);
+  if (it && it.jan) parts.push(`JAN ${it.jan}`);
+  if (it && it.yj) parts.push(`YJ ${it.yj}`);
+  if (it && it.place) parts.push(`置き場 ${it.place}`);
+  $("cCodes").innerHTML = parts.map(p => `<span>${p}</span>`).join("");
+  $("cUnit").textContent = (it && it.unit) || "―";
+}
+
+$("search").oninput = () => {
+  const q = norm($("search").value);
+  const box = $("results");
+  if (q.length < 2){ box.innerHTML = ""; return; }
+  const digits = q.replace(/\D/g, "");
+  let hits;
+  if (digits.length >= 13 && digits === q){
+    const g = toGtin(digits);
+    // 手入力のコード
+    if (g && !current.gtin){ current.gtin = g; current.item = lookup(g); renderItem(); if (current.item){ $("linkBox").hidden = true; $("cNotice").hidden = true; return; } }
+    hits = master.filter(m => m.jan && m.jan.includes(digits.slice(-12, -1)));
+  } else {
+    hits = master.filter(m => norm(m.name).includes(q));
+  }
+  box.innerHTML = "";
+  hits.slice(0, 30).forEach(m => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = `${escapeHtml(m.name)}<small>JAN ${m.jan || "-"}　YJ ${m.yj || "-"}　${escapeHtml(m.unit || "")}</small>`;
+    b.onclick = () => pickItem(m);
+    box.appendChild(b);
+  });
+  if (!hits.length) box.innerHTML = `<div class="notice">該当なし</div>`;
+};
+function pickItem(m){
+  const c = current;
+  c.item = m;
+  if (c.gtin && m.jan){
+    links[c.gtin] = m.jan.length === 14 ? m.jan.slice(1) : m.jan;
+    store.set("links", links);
+    enqueue({ action: "link", id: uid(), gtin: c.gtin, jan: links[c.gtin], staff: $("staff").value.trim() });
+  }
+  $("linkBox").hidden = true; $("cNotice").hidden = true;
+  renderItem();
+  $("qty").select();
+}
+
+$("plus").onclick = () => { $("qty").value = (Number($("qty").value) || 0) + 1; };
+$("minus").onclick = () => { $("qty").value = Math.max(0, (Number($("qty").value) || 0) - 1); };
+$("btnCancel").onclick = closeCard;
+function closeCard(){ current = null; $("card").hidden = true; lastCode = ""; }
+
+$("btnSend").onclick = () => {
+  const c = current; if (!c) return;
+  const staff = $("staff").value.trim();
+  if (!staff){ toast("担当者を入力してください"); $("staff").focus(); return; }
+  const qty = Number($("qty").value);
+  if ($("qty").value === "" || !(qty >= 0)){ toast("数量を入力してください"); return; }
+  if (!c.gtin && !c.item){ toast("コードを入力するか品名を選んでください"); return; }
+  const it = c.item || {};
+  const rec = {
+    action: "add", id: uid(), ts: Date.now(), staff, place: $("place").value.trim() || it.place || "",
+    gtin: c.gtin || "", jan: it.jan || (c.gtin && c.gtin[0] === "0" ? c.gtin.slice(1) : ""),
+    yj: it.yj || "", name: it.name || "（未登録）" + (c.gtin || ""), qty, unit: it.unit || ""
+  };
+  history.unshift({ ...rec, state: "待ち" }); history = history.slice(0, 50);
+  store.set("history", history);
+  enqueue(rec);
+  renderLog();
+  closeCard();
+};
+
+/* ===== Cコレクト2 印刷物の解析（index.html に同じものを埋め込む） ===== */
+const TAG_RE = /^[\[［(（【〔{]?\s*(錠|散|カプ|カ|液|水|外|注|包|粉|顆|シ)[^\]］)）】〕}]{0,3}[\]］)）】〕}|]\s*/;
+const QTY_RE = /^\d[\d.,\s]*\s*(錠|g|mg|ml|mL|包|カプセル|cap|枚|本|個|T)?\s*(補|[*※])?$/i;
+function parseSlip(text){
+  const lines = String(text).normalize("NFKC").split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  let start = lines.findIndex(l => /薬品名|秤量|枰量|坪量/.test(l));
+  start = start >= 0 ? start + 1 : 0;
+  const items = []; let cur = null;
+  const push = (name, qty) => {
+    name = name.replace(TAG_RE, "").replace(/\s+/g, "").trim();
+    if (name.length >= 2) items.push({ ocrName: name, qty: Number(String(qty).replace(/,/g, "")) || 0 });
+  };
+  for (let i = start; i < lines.length; i++){
+    const l = lines[i];
+    if (/^合\s*計|^[-=_ー─━.・*]{6,}|\d{4}\/\d{1,2}\/\d{1,2}|履歴/.test(l)) break;
+    if (/^ID[:：]/i.test(l)) continue;
+    if (QTY_RE.test(l)){
+      if (cur){ push(cur, l.replace(/(補|[*※]).*$/, "").replace(/[^\d.]/g, "")); cur = null; }
+      continue;
+    }
+    // 品名と数量が同じ行に並んだ場合（例：エンレスト錠200mg   30）
+    const m = l.match(/^(.*?\S)\s{1,}([\d.,]+)\s*(錠|包|g|ml)?$/);
+    if (m && /[^\d\s]/.test(m[1]) && !/(mg|g|ml|μg|%)$/i.test(m[1]) && TAG_RE.test(l)){
+      if (cur) cur = null;
+      push(m[1], m[2]); continue;
+    }
+    if (cur && !TAG_RE.test(l)) cur += l;           // 品名の折り返し（「トー / ワ」など）
+    else cur = l;
+  }
+  return items;
+}
+
+/* 品名の近さ（2文字ずつの一致率） */
+const keyName = s => String(s||"").normalize("NFKC").toLowerCase().replace(/[-‐‑–—―−ｰ]/g, "ー").replace(/[\s「」『』"'“”()（）\[\]［］・･]/g, "");
+function bigrams(s){ const a = []; for (let i = 0; i < s.length - 1; i++) a.push(s.slice(i, i + 2)); return a; }
+function similar(a, b){
+  a = keyName(a); b = keyName(b);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  const A = bigrams(a), B = bigrams(b); if (!A.length || !B.length) return 0;
+  const bag = new Map(); B.forEach(x => bag.set(x, (bag.get(x) || 0) + 1));
+  let hit = 0; A.forEach(x => { const n = bag.get(x); if (n){ hit++; bag.set(x, n - 1); } });
+  return 2 * hit / (A.length + B.length);
+}
+function candidates(name, master, n = 5){
+  return master.map(m => ({ m, s: similar(name, m.name) }))
+    .sort((x, y) => y.s - x.s).slice(0, n);
+}
+
+let slip = null;   // { id, rows:[{ocrName, qty, cands, pick, on, warn}], already }
+$("btnSlip").onclick = () => {
+  if (!gasUrl){ toast("設定でGASのURLを入れてください"); return; }
+  $("slipPhoto").click();
+};
+$("slipPhoto").onchange = async ev => {
+  const file = ev.target.files[0]; ev.target.value = "";
+  if (!file) return;
+  slip = null;
+  $("slip").hidden = false; $("slipRows").innerHTML = ""; $("slipId").textContent = "";
+  slipNote("読み取り中…（10秒ほどかかります）");
+  $("slipSend").disabled = true;
+  $("slip").scrollIntoView({ behavior: "smooth", block: "start" });
+  try{
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+    work.width = Math.round(bmp.width * scale); work.height = Math.round(bmp.height * scale);
+    wctx.drawImage(bmp, 0, 0, work.width, work.height);
+    // 下の「履歴バーコード」（Code39）から履歴番号を読む。二重取込の防止に使う
+    let hid = "";
+    try{
+      await loadZX();
+      const res = await readFn(wctx.getImageData(0, 0, work.width, work.height), { tryHarder: true, maxNumberOfSymbols: 4 });
+      const c = (res || []).find(r => /code\s?39/i.test(r.format) || /^R\d{6,}$/.test(r.text));
+      if (c) hid = c.text.replace(/\*/g, "");
+    }catch{}
+    const image = work.toDataURL("image/jpeg", .85).split(",")[1];
+    const r = await fetch(gasUrl, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "ocr", image, slip: hid }) });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || "読み取りに失敗しました");
+    $("slipText").textContent = j.text;
+    const items = parseSlip(j.text);
+    const sent = store.get("slipsSent", []);
+    slip = { id: j.slip || hid, already: j.already || sent.includes(j.slip || hid), rows: items.map(x => {
+      const cands = candidates(x.ocrName, master, 5);
+      const best = cands[0], second = cands[1];
+      const sure = best && best.s >= 0.95 && (!second || best.s - second.s >= 0.05);
+      return { ...x, cands, pick: best && best.s >= 0.5 ? best.m : null, on: true, warn: !sure };
+    }) };
+    renderSlip();
+  }catch(e){
+    slipNote("読み取れませんでした：" + e.message + "　明るい場所で、文字にピントを合わせて撮り直してください");
+  }
+};
+function slipNote(t){ $("slipNotice").hidden = !t; $("slipNotice").textContent = t || ""; }
+function renderSlip(){
+  const s = slip;
+  $("slipId").textContent = s.id ? "履歴番号 " + s.id : "履歴番号 読めず";
+  const nWarn = s.rows.filter(r => r.warn).length;
+  const msgs = [];
+  if (!s.rows.length) msgs.push("品名と数量を見つけられませんでした。印刷物全体が写るように撮り直してください");
+  if (s.already) msgs.push("この印刷物はすでに取り込み済みです。二重に数えないよう注意してください");
+  if (nWarn) msgs.push(`オレンジ枠の ${nWarn} 件は品名の候補が確実ではありません。選び直してください`);
+  slipNote(msgs.join("\n"));
+  const box = $("slipRows"); box.innerHTML = "";
+  s.rows.forEach((row, i) => {
+    const d = document.createElement("div");
+    d.className = "srow" + (row.warn ? " warn" : "") + (row.on ? "" : " off");
+    d.innerHTML = `<input type="checkbox" id="sOn${i}" ${row.on ? "checked" : ""} aria-label="この行を送る">
+      <div class="sname"><small>印字：${escapeHtml(row.ocrName)}</small>
+        <select id="sSel${i}"></select>
+        <input class="sq" id="sQ${i}" placeholder="違うときは品名で検索" autocomplete="off"></div>
+      <input class="sqty" id="sN${i}" type="number" inputmode="decimal" value="${row.qty}" aria-label="錠数">`;
+    box.appendChild(d);
+    const sel = d.querySelector("select");
+    const fill = list => {
+      sel.innerHTML = `<option value="">（選んでください）</option>` + list.map((c, k) =>
+        `<option value="${k}">${escapeHtml(c.m.name)}${c.s != null ? `（${Math.round(c.s * 100)}%）` : ""}</option>`).join("");
+      sel._list = list;
+      const k = list.findIndex(c => c.m === row.pick);
+      sel.value = k >= 0 ? String(k) : "";
+    };
+    fill(row.cands);
+    sel.onchange = () => { const c = sel._list[Number(sel.value)]; row.pick = c ? c.m : null; row.warn = false; d.classList.remove("warn"); };
+    d.querySelector(".sq").oninput = e => {
+      const q = norm(e.target.value);
+      if (q.length < 2){ fill(row.cands); return; }
+      fill(master.filter(m => norm(m.name).includes(q)).slice(0, 30).map(m => ({ m, s: null })));
+    };
+    d.querySelector("#sN" + i).oninput = e => { row.qty = Number(e.target.value) || 0; };
+    d.querySelector("#sOn" + i).onchange = e => { row.on = e.target.checked; d.classList.toggle("off", !row.on); updSlipBtn(); };
+  });
+  updSlipBtn();
+}
+function updSlipBtn(){
+  const n = slip ? slip.rows.filter(r => r.on).length : 0;
+  $("slipSend").disabled = !n;
+  $("slipSend").textContent = slip && slip.already ? `取込済みだが ${n} 件送信` : `${n} 件まとめて送信`;
+}
+$("slipCancel").onclick = () => { slip = null; $("slip").hidden = true; };
+$("slipSend").onclick = () => {
+  if (!slip) return;
+  const staff = $("staff").value.trim();
+  if (!staff){ toast("担当者を入力してください"); $("staff").focus(); return; }
+  const rows = slip.rows.filter(r => r.on);
+  const bad = rows.find(r => !r.pick || !(r.qty > 0));
+  if (bad){ slipNote(`「${bad.ocrName}」の品名か錠数が未入力です`); return; }
+  rows.forEach(r => {
+    const it = r.pick;
+    // Cコレクト2の印刷物は予製に貼ってあるものなので、棚番は「予製」にする
+    const rec = { action: "add", id: uid(), ts: Date.now(), staff, place: "予製",
+      gtin: "", jan: it.jan || "", yj: it.yj || "", name: it.name, qty: r.qty, unit: it.unit || "", slip: slip.id || "" };
+    history.unshift({ ...rec, state: "待ち" });
+    enqueue(rec);
+  });
+  history = history.slice(0, 50); store.set("history", history);
+  if (slip.id){ const sent = store.get("slipsSent", []); sent.push(slip.id); store.set("slipsSent", sent.slice(-500)); }
+  renderLog();
+  slip = null; $("slip").hidden = true;
+  toast(`${rows.length} 件を送信しました`);
+};
+
+/* ===== 差異表 ===== */
+let diffData = null, diffTab = "差異あり";
+const fmt = (n, d = 0) => n == null ? "―" : Number(n).toLocaleString("ja-JP", { maximumFractionDigits: d });
+$("btnDiff").onclick = async () => {
+  if (!gasUrl){ toast("設定でGASのURLを入れてください"); return; }
+  const b = $("btnDiff"); b.disabled = true; b.textContent = "作成中…（数十秒かかることがあります）";
+  try{
+    const r = await fetch(gasUrl + "?action=diff");
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || "作成に失敗しました");
+    diffData = j; renderDiff();
+  }catch(e){ toast("差異表を作れませんでした：" + e.message); }
+  b.disabled = false; b.textContent = "差異表を作る（最新にする）";
+};
+function renderDiff(){
+  const s = diffData.summary;
+  $("diffBody").hidden = false;
+  $("diffAt").textContent = s.at + " 時点";
+  $("diffTiles").innerHTML = [
+    ["対象品目", fmt(s.items), ""], ["カウント済み", fmt(s.counted), "ok"], ["未カウント", fmt(s.notYet), s.notYet ? "warn" : "ok"],
+    ["差異あり", fmt(s.diffItems), s.diffItems ? "bad" : "ok"], ["マスタ外", fmt(s.outside), s.outside ? "warn" : "ok"],
+    ["差異金額", fmt(s.diffMoney) + "円", s.diffMoney ? "bad" : "ok"],
+    ["期限切れ", fmt(s.expiredItems) + "品目", s.expiredItems ? "warn" : "ok"], ["廃棄予定金額", fmt(s.expiredMoney) + "円", s.expiredMoney ? "warn" : "ok"]
+  ].map(([k, v, c]) => `<div class="tile ${c}"><span>${k}</span><b>${v}</b></div>`).join("");
+  const counts = {}; diffData.rows.forEach(r => counts[r.status] = (counts[r.status] || 0) + 1);
+  $("diffTabs").innerHTML = ["差異あり", "未カウント", "マスタ外"].map(t =>
+    `<button type="button" data-t="${t}" class="${t === diffTab ? "on" : ""}">${t} ${counts[t] || 0}</button>`).join("");
+  $("diffTabs").querySelectorAll("button").forEach(b => b.onclick = () => { diffTab = b.dataset.t; renderDiff(); });
+  renderDiffList();
+}
+$("diffSearch").oninput = () => diffData && renderDiffList();
+function renderDiffList(){
+  const q = norm($("diffSearch").value);
+  const list = diffData.rows.filter(r => r.status === diffTab && (!q || norm(r.name + r.place).includes(q)));
+  const ul = $("diffList"); ul.innerHTML = "";
+  list.slice(0, 300).forEach(r => {
+    const li = document.createElement("li");
+    const u = escapeHtml(r.unit || "");
+    let v;
+    if (r.status === "差異あり") v = `<div class="v ${r.diff < 0 ? "neg" : "pos"}">${r.diff > 0 ? "+" : ""}${fmt(r.diff, 3)}${u}<br>${r.money > 0 ? "+" : ""}${fmt(r.money)}円</div>`;
+    else if (r.status === "未カウント") v = `<div class="v">理論 ${fmt(r.theo, 3)}${u}</div>`;
+    else v = `<div class="v">${fmt(r.count, 3)}${u}</div>`;
+    const exp = r.expired ? `・うち期限切れ ${fmt(r.expired, 3)}${u}（廃棄予定）` : "";
+    const sub = r.status === "差異あり" ? `理論 ${fmt(r.theo, 3)} → 棚卸 ${fmt(r.count, 3)}${u}（${r.n}件）${exp}・${escapeHtml(r.place || "")}`
+      : r.status === "マスタ外" ? `マスタにない品目（${r.n}件）。読替で品名を選び直してください` : escapeHtml(r.place || "");
+    li.innerHTML = `<b>${escapeHtml(r.name)}</b>${v}<small>${sub}</small>`;
+    li.onclick = () => countFromDiff(r);
+    ul.appendChild(li);
+  });
+  if (!list.length) ul.innerHTML = `<li><small>該当する品目はありません</small></li>`;
+  else if (list.length > 300) ul.insertAdjacentHTML("beforeend", `<li><small>ほか ${list.length - 300} 件。絞り込むかシートで確認してください</small></li>`);
+}
+// 差異表の品目から数を入力する（バーコードのない品目や、在庫0の確認に使う）
+function countFromDiff(r){
+  const it = master.find(m => (r.jan && m.jan === r.jan) || (r.yj && m.yj === r.yj));
+  if (!it){ showCard({ gtin: null, item: null, raw: "" }, true); $("search").value = r.name.split(" / ")[0]; $("search").oninput(); }
+  else showCard({ gtin: null, item: it, raw: "" });
+  $("card").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+/* ===== 送信キュー（電波が切れても端末に残して再送） ===== */
+function enqueue(job){ queue.push(job); store.set("queue", queue); flush(); }
+let flushing = false;
+async function flush(){
+  renderQueue();
+  if (flushing || !queue.length || !gasUrl) return;
+  flushing = true;
+  while (queue.length){
+    const job = queue[0];
+    try{
+      const r = await fetch(gasUrl, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(job) });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || "送信失敗");
+      queue.shift(); store.set("queue", queue);
+      const h = history.find(x => x.id === job.id);
+      if (h){ h.state = job.action === "delete" ? "取消済" : "送信済"; }
+      if (job.action === "delete"){ const t = history.find(x => x.id === job.target); if (t) t.state = "取消済"; }
+      store.set("history", history); renderLog();
+    }catch(e){
+      $("diag").textContent = "送信エラー：" + e.message + "（10秒後に再送）";
+      setTimeout(() => { flushing = false; flush(); }, 10000);
+      renderQueue(); return;
+    }
+    renderQueue();
+  }
+  flushing = false;
+}
+function renderQueue(){
+  const n = queue.filter(j => j.action !== "link").length;
+  $("stQueue").textContent = `送信待ち ${n}`;
+  $("stQueue").className = "pill " + (n ? "warn" : "ok");
+}
+window.addEventListener("online", flush);
+
+function renderLog(){
+  const ul = $("log"); ul.innerHTML = "";
+  history.slice(0, 20).forEach(h => {
+    const li = document.createElement("li");
+    const time = new Date(h.ts).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+    li.innerHTML = `<div class="t"><b>${escapeHtml(h.name)}</b><span>${time}・${h.state}</span></div>
+      <div class="q">${h.qty}${escapeHtml(h.unit || "")}</div>`;
+    if (h.state !== "取消済"){
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = "取消";
+      b.onclick = () => askUndo(h, b);
+      li.appendChild(b);
+    }
+    ul.appendChild(li);
+  });
+  if (!history.length) ul.innerHTML = `<li><div class="t"><span>まだ送信していません。カメラを起動してPTPシートか箱のバーコードを読んでください。</span></div></li>`;
+}
+function askUndo(h, btn){
+  if (btn.dataset.armed){
+    const qi = queue.findIndex(j => j.id === h.id);
+    if (qi >= 0){ queue.splice(qi, 1); store.set("queue", queue); h.state = "取消済"; store.set("history", history); renderLog(); renderQueue(); return; }
+    h.state = "取消中";
+    enqueue({ action: "delete", id: uid(), target: h.id, idToDelete: h.id });
+    renderLog(); return;
+  }
+  btn.dataset.armed = "1"; btn.textContent = "本当に取消"; btn.style.color = "var(--bad)";
+  setTimeout(() => { if (btn.isConnected){ delete btn.dataset.armed; btn.textContent = "取消"; btn.style.color = ""; } }, 3000);
+}
+
+/* ===== 設定 ===== */
+$("btnSaveUrl").onclick = () => { gasUrl = $("gasUrl").value.trim(); store.set("gasUrl", gasUrl); loadMaster(); flush(); };
+$("btnReload").onclick = loadMaster;
+
+/* ===== その他 ===== */
+let actx = null;
+function beep(on){
+  try{
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (!on){ actx.resume(); return; }
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.frequency.value = 1760; g.gain.value = .12;
+    o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime + .09);
+  }catch{}
+}
+function toast(t){ $("camMsg").textContent = t; $("diag").textContent = t; }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+
+indexMaster(); renderLog(); renderQueue(); loadMaster(); flush();
+</script>
+</body>
+</html>
